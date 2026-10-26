@@ -1,52 +1,17 @@
 <script>
-    let { author, number, children } = $props();
-    let quoteElement;
+    let { text, author, saved, onMove } = $props();
 
-    function getQuote() {
-        return `“${quoteElement.innerText.trim()}”\n— ${author}`;
-    }
+    let status = $state('');
 
-    // Ask for notification permission
-    function notificationPermission() {
-        if (!('Notification' in window)) {
-            return Promise.resolve('unsupported');
-        }
-
-        if (Notification.permission === 'default') {
-            return Notification.requestPermission();
-        }
-
-        return Promise.resolve(Notification.permission);
-    }
-
-    // Show a real system notification
-    async function notify(message, permission) {
-        if ((await permission) !== 'granted') return;
-
-        try {
-            if ('serviceWorker' in navigator) {
-                await navigator.serviceWorker.register('/sw.js');
-
-                const worker = await navigator.serviceWorker.ready;
-
-                await worker.showNotification('The Quote Archive', {
-                    body: message
-                });
-            } else {
-                new Notification('The Quote Archive', {
-                    body: message
-                });
-            }
-        } catch (error) {
-            console.error('Notification failed:', error);
-        }
+    function quoteText() {
+        return `“${text}”\n— ${author}`;
     }
 
     // Copy fallback for older browsers
-    function oldCopy(text) {
+    function oldCopy(value) {
         const input = document.createElement('textarea');
 
-        input.value = text;
+        input.value = value;
         input.style.position = 'fixed';
         input.style.opacity = '0';
 
@@ -54,36 +19,67 @@
 
         input.focus();
         input.select();
+        input.setSelectionRange(0, value.length);
 
         const copied = document.execCommand('copy');
 
         input.remove();
 
-        if (!copied) throw new Error('Copy failed');
+        if (!copied) {
+            throw new Error('Copy failed');
+        }
     }
 
-    // Copy quote
+    // Clipboard and Notifications API
     async function copyQuote() {
-        const permission = notificationPermission();
+        const permission =
+            'Notification' in window
+                ? Notification.permission === 'default'
+                    ? Notification.requestPermission()
+                    : Promise.resolve(Notification.permission)
+                : Promise.resolve('unsupported');
 
         try {
             if (navigator.clipboard?.writeText) {
                 try {
-                    await navigator.clipboard.writeText(getQuote());
+                    await navigator.clipboard.writeText(quoteText());
                 } catch {
-                    oldCopy(getQuote());
+                    oldCopy(quoteText());
                 }
             } else {
-                oldCopy(getQuote());
+                oldCopy(quoteText());
             }
 
-            await notify('Quote copied to clipboard!', permission);
+            status = 'Copied!';
         } catch {
-            await notify('Could not copy the quote.', permission);
+            status = 'Could not copy the quote.';
+            return;
+        }
+
+        try {
+            if ((await permission) !== 'granted') {
+                return;
+            }
+
+            if ('serviceWorker' in navigator) {
+                await navigator.serviceWorker.register('/sw.js');
+
+                const registration = await navigator.serviceWorker.ready;
+
+                await registration.showNotification('The Quote Archive', {
+                    body: 'Quote copied to clipboard!'
+                });
+            } else {
+                new Notification('The Quote Archive', {
+                    body: 'Quote copied to clipboard!'
+                });
+            }
+        } catch {
+            // Copy still works if system notifications are unavailable.
         }
     }
 
-    // Share quote
+    // Web Share API
     async function shareQuote() {
         if (!navigator.share) {
             await copyQuote();
@@ -92,7 +88,7 @@
 
         try {
             await navigator.share({
-                text: getQuote()
+                text: quoteText()
             });
         } catch (error) {
             if (error.name !== 'AbortError') {
@@ -102,47 +98,58 @@
     }
 </script>
 
-<article class="flex min-h-80 flex-col rounded-3xl border border-white/10 bg-white/5 p-7 transition duration-200 hover:-translate-y-1 hover:border-violet-300/40 hover:bg-white/10">
+<article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
 
-    <div class="mb-5 flex items-start justify-between">
-
-        <span class="rounded-full bg-violet-400/15 px-3 py-1 text-xs font-semibold tracking-widest text-violet-200">
-            {number} / 05
-        </span>
-
-        <span aria-hidden="true" class="font-serif text-6xl leading-none text-violet-300">
-            “
-        </span>
-
-    </div>
-
-    <blockquote
-        bind:this={quoteElement}
-        class="flex-1 font-serif text-2xl leading-snug text-white"
+    <span
+        class="text-3xl leading-none text-indigo-400"
+        aria-hidden="true"
     >
-        {@render children?.()}
+        “
+    </span>
+
+    <blockquote class="mt-1 text-xl font-medium leading-relaxed text-slate-800">
+        {text}
     </blockquote>
 
-    <p class="mt-5 text-sm font-medium text-violet-200">
+    <p class="mt-3 text-sm text-slate-500">
         — {author}
     </p>
 
-    <div class="mt-6 flex gap-3 border-t border-white/10 pt-5">
+    <div class="mt-5 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
 
+        <!-- Copy -->
         <button
+            type="button"
             onclick={copyQuote}
-            class="flex-1 rounded-xl bg-violet-300 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-violet-200"
+            class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
         >
             Copy
         </button>
 
+        <!-- Share -->
         <button
+            type="button"
             onclick={shareQuote}
-            class="flex-1 rounded-xl border border-white/20 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/10"
+            class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold hover:bg-slate-50"
         >
-            Share
+            Share ↗
+        </button>
+
+        <!-- Move between columns -->
+        <button
+            type="button"
+            onclick={onMove}
+            class="ml-auto rounded-lg px-3 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50"
+        >
+            {saved ? '← Return' : 'Save →'}
         </button>
 
     </div>
+
+    {#if status}
+        <p role="status" class="mt-2 text-xs text-indigo-600">
+            {status}
+        </p>
+    {/if}
 
 </article>
