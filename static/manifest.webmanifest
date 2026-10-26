@@ -1,0 +1,8 @@
+{
+    "name": "The Quote Archive",
+    "short_name": "Quotes",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#11121b",
+    "theme_color": "#11121b"
+}
